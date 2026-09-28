@@ -1,0 +1,5 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "fabcore2_module") (type "KiCad") (uri "${KIPRJMOD}/fabcore2_module.pretty") (options "") (descr "Reusable FabCore2 daughterboard module"))
+	(lib (name "winkdings2_parts") (type "KiCad") (uri "${KIPRJMOD}/winkdings2_parts.pretty") (options "") (descr "Winkdings2 local parts"))
+)
