@@ -1,8 +1,12 @@
-# Hello World — CH32V203G6
+# CH32V203G6 examples
 
-Bare-metal blink on **PB5** for the WCH CH32V203G6 (QingKe V4B RISC-V core,
-32K flash / 10K RAM). No vendor library needed — GPIO registers are poked
-directly.
+Bare-metal firmware for the WCH CH32V203G6 (QingKe V4B RISC-V core,
+32K flash / 10K RAM). No vendor library needed — GPIO registers are
+poked directly.
+
+- **blink** — blinks a LED on PB5
+- **heart** — scans an 8x12 heart across 8 LEDs, one column at a
+  time at 400 Hz (POV-style)
 
 ```
 .
@@ -10,7 +14,8 @@ directly.
 ├── link.ld           # linker script (adjust FLASH/RAM for other variants)
 └── src
     ├── startup.S     # reset entry, .data/.bss init
-    └── main.c        # PB5 blink
+    ├── blink.c       # PB5 blink
+    └── heart.c       # 8-LED heart, column-scanned
 ```
 
 ## 1. Install the toolchain
@@ -86,7 +91,7 @@ Then:
 
 ```sh
 wchisp info          # should print "Chip: CH32V203..."
-make flash           # or: wchisp flash build/hello.elf
+make flash-heart     # or: wchisp flash build/heart.elf
 ```
 
 ### Method 2 — WCH-Link(E) debugger (works on every board)
@@ -98,20 +103,31 @@ Connect the WCH-LinkE's **SWDIO** to the chip's SWDIO pin, plus GND and
   (part of ch32v003fun — `git clone`, then `make -C minichlink`):
 
   ```sh
-  make flash-link    # or: minichlink -w build/hello.bin 0x08000000 -b
+  make flash-link-heart    # or: minichlink -w build/heart.bin 0x08000000 -b
   ```
 
-- [`wlink`](https://github.com/ch32-rs/wlink): `wlink flash build/hello.elf`
+- [`wlink`](https://github.com/ch32-rs/wlink): `wlink flash build/heart.elf`
 - WCH's OpenOCD fork or MounRiver Studio's download button on Windows.
 
 ## 3. Build
 
 ```sh
-make            # produces build/hello.elf, .bin, .hex
+make            # builds both: build/blink.* and build/heart.*
+make blink      # or just one firmware
+make heart
 ```
 
-Wire an LED (with a series resistor, ~330R–1k) between **PB5** and GND —
-it should blink at a few Hz after flashing and resetting.
+Flash with `make flash-blink` / `make flash-heart` (plain `make flash`
+builds and flashes `heart`).
+
+### Wiring
+
+- **blink**: LED (with a series resistor, ~330R–1k) between **PB5** and
+  GND — blinks at a few Hz.
+- **heart**: 8 LEDs, each with a series resistor to GND. In LED1..LED8
+  order (top to bottom row of the pattern): **PB1, PB0, PA7, PA6, PA5,
+  PA4, PA3, PB3**. `heart.c` releases PB3 from JTAG via the AFIO
+  `SWJ_CFG` bits.
 
 ## Notes
 
