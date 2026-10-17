@@ -1,7 +1,7 @@
-# Toolchain prefix. Works with xPack riscv-none-elf-gcc and
-# MounRiver toolchains out of the box. For the Debian/Ubuntu
-# package use:  make CROSS=riscv64-unknown-elf-
-CROSS    ?= riscv-none-elf-
+# Toolchain prefix. Works with the Debian/Ubuntu
+# gcc-riscv64-unknown-elf package out of the box. For xPack or
+# MounRiver toolchains use:  make CROSS=riscv-none-elf-
+CROSS    ?= riscv64-unknown-elf-
 CC        = $(CROSS)gcc
 OBJCOPY   = $(CROSS)objcopy
 SIZE      = $(CROSS)size

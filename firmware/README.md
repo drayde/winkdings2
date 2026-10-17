@@ -17,7 +17,14 @@ directly.
 
 You need a RISC-V bare-metal GCC that produces `rv32imac` code. Pick one:
 
-### Option A — xPack riscv-none-elf-gcc (recommended, all platforms)
+### Option A — distro package (Debian/Ubuntu)
+
+```sh
+sudo apt install gcc-riscv64-unknown-elf make
+# this is the Makefile default — just run `make`
+```
+
+### Option B — xPack riscv-none-elf-gcc (all platforms)
 
 1. Download the latest `*-linux-x64.tar.gz` (or `-win32-x64.zip` / `-darwin-*`)
    from the [releases page](https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases).
@@ -29,20 +36,14 @@ You need a RISC-V bare-metal GCC that produces `rv32imac` code. Pick one:
    ```
 
 3. Verify: `riscv-none-elf-gcc --version`
-
-### Option B — distro package (Debian/Ubuntu)
-
-```sh
-sudo apt install gcc-riscv64-unknown-elf make
-# the prefix differs, so build with:
-make CROSS=riscv64-unknown-elf-
-```
+4. Build with: `make CROSS=riscv-none-elf-`
 
 ### Option C — Windows IDE
 
 [MounRiver Studio](http://www.mounriver.com/) is WCH's Eclipse-based IDE and
 bundles the same GCC toolchain plus a project wizard for CH32V20x. You can
-still use this Makefile if the bundled `riscv-none-elf-gcc` is on your PATH.
+still use this Makefile (`make CROSS=riscv-none-elf-`) if the bundled
+`riscv-none-elf-gcc` is on your PATH.
 
 ## 2. Install a flashing tool
 
