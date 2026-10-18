@@ -1,18 +1,30 @@
 /*
- * Minimal polled USB CDC-ACM device for CH32V203 (STM32F1-style USBD
- * peripheral + 512B packet memory). Only meant to run while the device
- * is in programming mode — call usb_cdc_init() to switch the system
- * clock to 48 MHz (HSI/PLL) and enumerate, usb_cdc_deinit() to return
- * to 8 MHz HSI.
+ * Minimal polled USB CDC-ACM device for CH32V203 (STM32F1-style
+ * USBD block at 0x40005C00 + 512-byte PMA; the G6U6 has USBD only).
+ * Only meant to run while the device is in programming mode — call
+ * usb_cdc_init() to switch the system clock to 48 MHz (HSI/PLL) and
+ * enumerate, usb_cdc_deinit() to return to 8 MHz HSI.
  */
 #ifndef USB_CDC_H
 #define USB_CDC_H
 
 #include <stdint.h>
 
+/* USB PID; the resident loader uses 0x570A (-DUSB_CDC_PID=...). */
+#ifndef USB_CDC_PID
+#define USB_CDC_PID 0x570Bu
+#endif
+
 void usb_cdc_init(void);     /* switch sysclk to 48 MHz, init USBD */
 void usb_cdc_deinit(void);   /* shut USBD down, back to 8 MHz HSI  */
 void usb_cdc_poll(void);     /* service pending USB events         */
+
+/* Debug aid: set once the host has touched the bus (RESET or CTR),
+ * i.e. our pull-up was seen and enumeration is under way. */
+extern volatile uint8_t usb_cdc_seen;
+
+/* Monotonic count of bytes received on the CDC data endpoint. */
+extern volatile uint32_t usb_cdc_rx_total;
 
 /* Next byte from the host, or -1 when the RX fifo is empty. */
 int  usb_cdc_getchar(void);

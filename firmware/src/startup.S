@@ -9,11 +9,19 @@
     .p2align 2
 _start:
     /* The chip boots through the 0x00000000 flash alias while the
-     * image is linked for 0x08000000. Jump to the real address so
+     * image is linked for 0x08000000+. Jump to the real address so
      * pc-relative absolute addressing (la gp/sp/_data_vma) computes
-     * correctly. (No-op if we already booted at 0x08000000.) */
-    lui     t0, 0x08000
-    jalr    zero, 8(t0)
+     * correctly. Works for any link base: when booting via the alias
+     * pc < 0x08000000, so add the 128M offset; when already at the real
+     * address (loader->app jump) the add is skipped. */
+    .option push
+    .option norvc           /* fixed 4-byte insns so the offset holds */
+    auipc   t0, 0           /* t0 = pc of this insn (alias or real) */
+    lui     t1, 0x08000
+    bgeu    t0, t1, 1f
+    add     t0, t0, t1
+1:  jalr    zero, 20(t0)    /* continue at the instruction after this */
+    .option pop
 
     /* gp must be loaded with relaxation disabled */
     .option push

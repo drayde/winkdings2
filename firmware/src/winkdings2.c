@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include "flash_store.h"
 #include "usb_cdc.h"
+#include "prog_proto.h"
 
 /* RCC */
 #define RCC_BASE        0x40021000u
@@ -183,86 +184,15 @@ static void enter_standby(void)
     btn_armed = !(GPIOA_INDR & 1u); /* suppress the waking press    */
 }
 
-/* ---- programming-mode protocol ---- */
+/* ---- programming mode ---- */
 
-static uint8_t  rx_buf[FS_REGION_SIZE];
-static uint8_t  rx_state;           /* 0 cmd, 1 len_lo, 2 len_hi, 3 data */
-static uint16_t rx_len, rx_pos;
-static uint8_t  prog_exit;
-
-#define FW_VER      1u
-#define ST_OK       0x00u
-#define ST_ERR_LEN  0x01u
-#define ST_ERR_CRC  0x02u
-#define ST_ERR      0x04u
-
-static void proto_poll(void)
+static void __attribute__((noreturn)) soft_reset(void)
 {
-    int ch;
-    while ((ch = usb_cdc_getchar()) >= 0) {
-        switch (rx_state) {
-        case 0: {
-            uint8_t r[8] = { ST_OK, 'W', 'K', '2', FW_VER,
-                             FS_REGION_SIZE & 0xFF, FS_REGION_SIZE >> 8,
-                             fs_count() };
-            switch (ch) {
-            case 0x00:              /* INFO */
-                usb_cdc_write(r, sizeof(r));
-                break;
-            case 0x01: {            /* READ: whole blob */
-                uint16_t n = fs_blob_len();
-                uint8_t h[3] = { n ? ST_OK : ST_ERR, n & 0xFF, n >> 8 };
-                usb_cdc_write(h, 3);
-                if (n)
-                    usb_cdc_write((const void *)FS_REGION_BASE, n);
-                break;
-            }
-            case 0x02:              /* WRITE: u16 len + blob */
-                rx_state = 1;
-                break;
-            case 0x03: {            /* EXIT */
-                uint8_t ok = ST_OK;
-                usb_cdc_write(&ok, 1);
-                prog_exit = 1;
-                break;
-            }
-            default: {
-                uint8_t e = ST_ERR;
-                usb_cdc_write(&e, 1);
-                break;
-            }
-            }
-            break;
-        }
-        case 1:
-            rx_len = ch;
-            rx_state = 2;
-            break;
-        case 2:
-            rx_len |= (uint16_t)ch << 8;
-            rx_pos = 0;
-            if (!rx_len) {
-                uint8_t e = ST_ERR_LEN;
-                usb_cdc_write(&e, 1);
-                rx_state = 0;
-            } else
-                rx_state = 3;
-            break;
-        case 3:
-            if (rx_pos < sizeof(rx_buf))
-                rx_buf[rx_pos] = ch;
-            rx_pos++;
-            if (rx_pos >= rx_len) {
-                int st = ST_ERR_LEN;
-                if (rx_len <= sizeof(rx_buf))
-                    st = fs_write(rx_buf, rx_len);
-                uint8_t r = st ? (st == 2 ? ST_ERR_CRC : ST_ERR) : ST_OK;
-                usb_cdc_write(&r, 1);
-                rx_state = 0;
-            }
-            break;
-        }
-    }
+    /* let a pending reply packet drain (SIE sends autonomously) */
+    delay_cycles(800000);                    /* ~50 ms at 48 MHz */
+    usb_cdc_deinit();
+    *(volatile uint32_t *)0xE000E048u = 0xBEEF0000u | (1u << 7);
+    __builtin_unreachable();
 }
 
 /* Programming mode: Larson scanner + USB protocol until EXIT or
@@ -271,16 +201,30 @@ static void prog_mode(void)
 {
     usb_cdc_init();
     col_delay = COL_DELAY_48M;
-    prog_exit = 0;
+    proto_init();
 
     /* local button tracking: if the button is still held from the
      * long-press that got us here, wait for a release first */
     uint8_t armed = !(GPIOA_INDR & 1u), stable = 0, deb = 0;
-    uint32_t last_step = tick;
+    uint32_t last_step = tick, press_t = 0;
     int8_t pos = 0, dir = 1;
+    int done = 0;
 
-    for (;;) {
-        delay_cycles(col_delay);
+    /* USB needs polling at ~150 us intervals (usbprog proves slower
+     * breaks enumeration with -71), so each tick's delay is split
+     * into 16 sub-polls.  Button/Larson logic stays per-tick. */
+    while (!done) {
+        for (int k = 0; k < 16 && !done; k++) {
+            delay_cycles(col_delay / 16);
+            usb_cdc_poll();
+            int ev = proto_poll();
+            if (ev == PROTO_EV_EXIT)
+                done = 1;
+            else if (ev == PROTO_EV_RESET)
+                soft_reset();       /* lands in usbload */
+        }
+        if (done)
+            break;
         tick++;
 
         /* Larson scanner — single lit LED bouncing 0..7 */
@@ -292,25 +236,24 @@ static void prog_mode(void)
             show_column((uint8_t)(1u << pos));
         }
 
-        usb_cdc_poll();
-        proto_poll();
-        if (prog_exit)
-            break;
-
         uint8_t raw = GPIOA_INDR & 1u;
         if (raw != stable) {
             if (++deb >= DEB_TICKS) {
                 deb = 0;
                 stable = raw;
-                if (!stable) {
-                    if (!armed)
-                        armed = 1;
-                    else
-                        break;      /* short press -> exit */
-                }
+                if (stable)
+                    press_t = tick;
+                else if (!armed)
+                    armed = 1;
+                else
+                    done = 1;       /* short press -> exit */
             }
         } else
             deb = 0;
+        /* holding the button >=2 s inside prog mode resets into the
+         * loader — a recovery path that works even if USB is dead */
+        if (armed && stable && tick - press_t >= LONG_TICKS)
+            soft_reset();
     }
 
     usb_cdc_deinit();
