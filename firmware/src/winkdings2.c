@@ -140,16 +140,16 @@ static int poll_button(void)
     return EV_NONE;
 }
 
-/* Single lit LED bouncing 0..7 for `ticks` column-steps. Local
- * tick counter — safe before globals are trusted. Debug version:
- * aborts early when PA0 is pressed and leaves the LED lit. */
+/* Single lit LED bouncing 0..7. Runs for at least `ticks`
+ * column-steps, then exits at the end of a full 0->7->0 sweep.
+ * A button press aborts early. */
 static void larson(uint32_t ticks, uint32_t cdly)
 {
     int8_t pos = 0, dir = 1;
     uint32_t t = 0, last = 0;
 
     show_column(1);                 /* LED1 on immediately */
-    while (t < ticks) {
+    for (;;) {
         delay_cycles(cdly);
         t++;
         if (GPIOA_INDR & 1u)
@@ -160,6 +160,8 @@ static void larson(uint32_t ticks, uint32_t cdly)
             if (pos >= 7) { pos = 7; dir = -1; }
             if (pos <= 0) { pos = 0; dir = 1; }
             show_column((uint8_t)(1u << pos));
+            if (t >= ticks && pos == 0 && dir == 1)
+                return;             /* full sweep done */
         }
     }
 }
@@ -345,9 +347,9 @@ int main(void)
                 | 0x33333000u | 0x4u;
     GPIOB_CFGLR = (GPIOB_CFGLR & ~0x0000F0FFu) | 0x00003033u;
 
-    /* Debug: Larson sweep on EVERY reset until the button is
-     * pressed — LED1 lights within microseconds of reset. */
-    larson(~0u, COL_DELAY_8M);
+    /* Startup sweep: ~5 s (2000 ticks @ ~400 Hz), ends on a full
+     * 0->7->0 pass; a button press skips it. */
+    larson(2000, COL_DELAY_8M);
 
     RCC_APB1PCENR |= RCC_PWREN;
     PWR_CTLR |= PWR_CSBF;           /* clear standby flag */
