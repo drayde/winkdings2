@@ -40,8 +40,8 @@
 #define GPIOA_LED_MASK  0xF8u           /* PA3..PA7 */
 #define GPIOB_LED_MASK  0x0Bu           /* PB0, PB1, PB3 */
 
-/* The heart, 8 rows x 12 columns. One byte per column,
- * bit0 = LED1 = top row:
+/* The heart, 8 rows x 12 columns + 1 blank column (wrap gap).
+ * One byte per column, bit0 = LED1 = top row:
  *   .**.....**..
  *   ****...****.
  *   ***********.
@@ -54,16 +54,19 @@
 static const uint8_t HEART[] = {
     0x06, 0x0F, 0x1F, 0x3E, 0x7E, 0xFC,
     0x7C, 0x3E, 0x1F, 0x0F, 0x06, 0x04,
+    0x00,
 };
 
 /* 8 MHz HSI / 400 Hz column rate; delay() is ~3 core clocks/iter */
 #define COL_DELAY       (8000000u / 400u / 3u)
 
-static void delay(volatile uint32_t cycles)
+/* ~3 core clocks per iteration (addi+bnez) — deterministic. */
+static void delay(uint32_t cycles)
 {
-    while (cycles--) {
-        __asm__ volatile ("nop");
-    }
+    __asm__ volatile (
+        "1: addi %0, %0, -1\n"
+        "   bnez %0, 1b\n"
+        : "+r" (cycles) :: "cc");
 }
 
 int main(void)
@@ -85,7 +88,7 @@ int main(void)
             /* Scatter pattern bits onto the physical pins */
             uint32_t pa = (col & 0x40u) >> 3  /* bit6 -> PA3 */
                         | (col & 0x20u) >> 1  /* bit5 -> PA4 */
-                        | (col & 0x10u)       /* bit4 -> PA5 */
+                        | (col & 0x10u) << 1  /* bit4 -> PA5 */
                         | (col & 0x08u) << 3  /* bit3 -> PA6 */
                         | (col & 0x04u) << 5; /* bit2 -> PA7 */
             uint32_t pb = (col & 0x01u) << 1  /* bit0 -> PB1 */

@@ -7,15 +7,21 @@ poked directly.
 - **blink** — blinks a LED on PB5
 - **heart** — scans an 8x12 heart across 8 LEDs, one column at a
   time at 400 Hz (POV-style)
+- **winkdings2** — the real thing: cycles patterns from flash across
+  the 8 LEDs at 400 Hz, USB-reprogrammable over CDC-ACM
 
 ```
 .
-├── Makefile          # build + flash targets
-├── link.ld           # linker script (adjust FLASH/RAM for other variants)
+├── Makefile            # build + flash targets
+├── link.ld             # linker script for blink/heart
+├── link_winkdings2.ld  # same, but reserves top 4K flash for patterns
 └── src
-    ├── startup.S     # reset entry, .data/.bss init
-    ├── blink.c       # PB5 blink
-    └── heart.c       # 8-LED heart, column-scanned
+    ├── startup.S       # reset entry, .data/.bss init
+    ├── blink.c         # PB5 blink
+    ├── heart.c         # 8-LED heart, column-scanned
+    ├── winkdings2.c    # state machine: display / standby / programming
+    ├── usb_cdc.c       # polled bare-metal USBD CDC-ACM
+    └── flash_store.c   # pattern blob: validate, erase, program
 ```
 
 ## 1. Install the toolchain
@@ -112,22 +118,72 @@ Connect the WCH-LinkE's **SWDIO** to the chip's SWDIO pin, plus GND and
 ## 3. Build
 
 ```sh
-make            # builds both: build/blink.* and build/heart.*
-make blink      # or just one firmware
+make              # builds all targets: build/{blink,heart,winkdings2}.*
+make blink        # or just one firmware
 make heart
+make winkdings2
 ```
 
-Flash with `make flash-blink` / `make flash-heart` (plain `make flash`
-builds and flashes `heart`).
+Flash with `make flash-blink` / `make flash-heart` /
+`make flash-winkdings2` (plain `make flash` builds and flashes
+`winkdings2`).
 
 ### Wiring
 
 - **blink**: LED (with a series resistor, ~330R–1k) between **PB5** and
   GND — blinks at a few Hz.
-- **heart**: 8 LEDs, each with a series resistor to GND. In LED1..LED8
-  order (top to bottom row of the pattern): **PB1, PB0, PA7, PA6, PA5,
-  PA4, PA3, PB3**. `heart.c` releases PB3 from JTAG via the AFIO
-  `SWJ_CFG` bits.
+- **heart / winkdings2**: 8 LEDs, each with a series resistor to GND.
+  In LED1..LED8 order (top to bottom row of the pattern):
+  **PB1, PB0, PA7, PA6, PA5, PA4, PA3, PB3**. The firmware releases PB3
+  from JTAG via the AFIO `SWJ_CFG` bits.
+- **winkdings2** additionally uses the button on **PA0** (external
+  pulldown; PA0 is the WKUP pin so it can wake from standby).
+
+## 4. winkdings2 operation
+
+- **Cold power-on**: Larson sweep for ~2 s, then straight to standby
+  (debug aid: proves the MCU runs). A standby wake (button press)
+  skips the sweep and shows the first pattern.
+- **Short press**: next pattern; wraps to the first after the last.
+- **Idle 30 s**: enters standby (CR2032-friendly, ~µA).
+- **Hold 2 s**: programming mode — Larson scanner on the LEDs and a
+  CDC-ACM device appears (`/dev/ttyACM*`). Exit with a short press or
+  the `EXIT` command.
+- A button held at the wake edge only shows pattern 1 — long-press is
+  only armed once the device is awake.
+
+### Pattern blob format (stored at `0x08007000`, max 4096 bytes)
+
+Little-endian:
+
+```
+u16  magic    'W','K' (0x4B57)
+u8   version  = 1
+u8   count    number of patterns (1..255)
+...  records, packed back-to-back:
+        u8  ncols (1..255)
+        u8  cols[ncols]   one byte per column, bit0 = LED1 = top row
+u16  crc16    CRC-16/CCITT (poly 0x1021, init 0xFFFF) over all
+              preceding bytes; blob padded with 0xFF to even length
+```
+
+On boot the firmware validates the blob and, if invalid (e.g. first
+flash), writes the built-in heart pattern.
+
+### USB protocol (CDC-ACM, binary request/response)
+
+Host sends `[cmd][args]`, device replies `[status][payload]`.
+Status: `0x00` OK, `0x01` bad length, `0x02` bad CRC, `0x04` error.
+
+```
+0x00 INFO   -> 'W','K','2', fwver u8, region_size u16, count u8
+0x01 READ   -> status, u16 len, blob[len]
+0x02 WRITE  <- u16 len, blob[len]   -> status (blob validated first)
+0x03 EXIT   -> status, device leaves programming mode
+```
+
+The VID/PID pair `0x0448:0x570B` in `usb_cdc.c` is a placeholder —
+change it before shipping anything.
 
 ## Notes
 
