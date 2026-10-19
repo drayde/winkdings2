@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>winkdings2 pattern editor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: #000; color: #ddd;
+    font: 14px/1.45 system-ui, sans-serif;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  h1 small { color: #888; font-weight: 400; }
+  button {
+    background: #222; color: #ddd; border: 1px solid #444;
+    border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #333; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: #14375a; border-color: #2b6cb0; }
+  button.primary:hover:not(:disabled) { background: #1b4a7a; }
+  button.danger:hover:not(:disabled) { background: #5a1414; border-color: #a33; }
+  #bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 16px 0; }
+  #bar .sep { width: 1px; height: 24px; background: #333; margin: 0 4px; }
+  #status { padding: 4px 10px; border-radius: 10px; background: #222; font-size: 12px; }
+  #status.on { background: #143a14; color: #7f7; }
+  #status.off { background: #3a1414; color: #f88; }
+  #help, #needprog {
+    border: 1px solid #553; background: #1a1408; border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; display: none; max-width: 720px;
+  }
+  #help code, #needprog code { color: #fd6; }
+  .pattern {
+    display: inline-block; vertical-align: top; margin: 0 16px 24px 0;
+    border: 1px solid #2a2a2a; border-radius: 10px; padding: 12px;
+    background: #0a0a0a;
+  }
+  .pattern h2 { font-size: 13px; margin: 0 0 8px; color: #aaa; font-weight: 600;
+                display: flex; justify-content: space-between; gap: 12px; }
+  .pattern h2 button { padding: 1px 7px; font-size: 11px; }
+  .grid { display: grid; gap: 4px; }
+  .ctl { display: flex; align-items: center; justify-content: center;
+         width: 22px; height: 16px; border-radius: 4px; border: 0;
+         background: transparent; color: #666; font-size: 13px;
+         padding: 0; cursor: pointer; }
+  .ctl:hover:not(:disabled) { background: #222; color: #eee; }
+  .ctl:disabled { visibility: hidden; }
+  .led { width: 22px; height: 22px; border-radius: 50%; border: 0;
+         background: #333; cursor: pointer; padding: 0; }
+  .led.on { background: #ff2a2a; box-shadow: 0 0 8px #ff2a2a88; }
+  .gap { width: 22px; height: 22px; }
+  #log {
+    font: 12px/1.5 ui-monospace, monospace; color: #8f8; white-space: pre-wrap;
+    max-width: 720px; margin-top: 8px; max-height: 160px; overflow: auto;
+  }
+  #patterns { margin-top: 8px; }
+  .hint { color: #777; font-size: 12px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>winkdings2 <small>pattern editor</small></h1>
+<div class="hint">Hold the button ~2 s on the device until the Larson scanner runs, then connect.</div>
+
+<div id="help">
+  <b>Web Serial is not available in this browser.</b><br>
+  Use a Chromium-based browser on a desktop OS:
+  <code>Chrome ≥ 89</code>, <code>Edge ≥ 89</code>, <code>Opera ≥ 75</code>,
+  or ChromeOS.<br>
+  Firefox and Safari do not support Web Serial.<br>
+  The page must be served from a secure context: <code>https://</code>,
+  <code>http://localhost</code>, or opened as a local <code>file://</code>.
+</div>
+<div id="needprog"><b>Connected port is not answering the winkdings protocol.</b><br>
+  Make sure the device is in <b>programming mode</b>: hold the button for
+  ~2 s until the Larson scanner (single light sweeping back and forth) is
+  running, then reconnect.</div>
+
+<div id="bar">
+  <button id="connect" class="primary">Connect</button>
+  <button id="connectAny">Connect (any port)</button>
+  <span id="status" class="off">disconnected</span>
+  <span class="sep"></span>
+  <button id="read" disabled>Read</button>
+  <button id="write" disabled>Write to device</button>
+  <button id="exitProg" disabled title="leave programming mode">Exit prog mode</button>
+  <span class="sep"></span>
+  <button id="addPat">+ pattern</button>
+  <button id="exportJson">Export JSON</button>
+  <button id="exportBin">Export .bin</button>
+  <button id="importBtn">Import</button>
+  <input id="importFile" type="file" accept=".json,.bin" hidden>
+</div>
+
+<div id="patterns"></div>
+<div id="log"></div>
+
+<script>
+"use strict";
+/* ---- winkdings2 pattern blob protocol ---------------------------
+ * cmds: 0x00 INFO -> [00,'W','K','2',ver,region_lo,region_hi,count]
+ *       0x01 READ -> [00,len_lo,len_hi] + blob
+ *       0x02 WRITE u16le len + blob -> [00] ok / [err]
+ *       0x03 EXIT -> [00]
+ * blob: 'W' 'K' ver=2 count (ncols cols*)+ pad? crc16le (ccitt/FFFF)
+ */
+const VID = 0x0448, PID = 0x570b;
+const MIN_COLS = 3, MAX_COLS = 255, MAX_PATTERNS = 255, REGION = 4096;
+
+const $ = id => document.getElementById(id);
+const logEl = $("log");
+function log(msg) {
+  logEl.textContent += msg + "\n";
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ---- model ---- */
+let patterns = [];   // patterns[i] = array of column bytes (bit i = LED i+1)
+
+function crc16(data) {
+  let crc = 0xFFFF;
+  for (const b of data) {
+    crc ^= b << 8;
+    for (let i = 0; i < 8; i++)
+      crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xFFFF
+                         : (crc << 1) & 0xFFFF;
+  }
+  return crc;
+}
+
+function buildBlob(pats) {
+  const b = [0x57, 0x4B, 0x02, pats.length];
+  for (const p of pats) { b.push(p.length, ...p); }
+  if (b.length & 1) b.push(0xFF);
+  const c = crc16(b);
+  b.push(c & 0xFF, c >> 8);
+  return Uint8Array.from(b);
+}
+
+function parseBlob(buf) {
+  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  if (b.length < 7 || b[0] !== 0x57 || b[1] !== 0x4B)
+    throw new Error("bad magic — not a winkdings blob");
+  if (b[2] !== 2) throw new Error("unsupported blob version " + b[2]);
+  const count = b[3];
+  if (!count) throw new Error("blob has 0 patterns");
+  const out = [];
+  let p = 4;
+  for (let i = 0; i < count; i++) {
+    const n = b[p++];
+    if (!n || p + n > b.length) throw new Error("truncated record " + i);
+    out.push([...b.slice(p, p + n)]);
+    p += n;
+  }
+  let end = p + (p & 1);
+  const want = b[end] | (b[end + 1] << 8);
+  if (crc16(b.slice(0, end)) !== want) throw new Error("CRC mismatch");
+  return out;
+}
+
+/* ---- serial ---- */
+let port = null, reader = null, rxBuf = [], rxWaiters = [], rxLen = 0;
+
+function setStatus(on, text) {
+  $("status").className = on ? "on" : "off";
+  $("status").textContent = text;
+  for (const id of ["read", "write", "exitProg"])
+    $(id).disabled = !on;
+  $("connect").textContent = on ? "Disconnect" : "Connect";
+}
+
+async function pump() {
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      if (value && value.length) {
+        rxBuf.push(...value); rxLen += value.length;
+        for (const w of rxWaiters.splice(0)) w();
+      }
+    }
+  } catch (e) { /* device went away */ }
+  setStatus(false, "disconnected");
+  log("port closed");
+}
+
+function readN(n, timeout = 5000) {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const check = () => {
+      if (rxLen >= n) {
+        const out = Uint8Array.from(rxBuf.slice(0, n));
+        rxBuf = rxBuf.slice(n); rxLen -= n;
+        resolve(out);
+      } else if (Date.now() - t0 > timeout) {
+        reject(new Error("timeout (" + rxLen + "/" + n + " B)"));
+      } else rxWaiters.push(check);
+    };
+    check();
+  });
+}
+
+async function send(...bytes) {
+  const w = port.writable.getWriter();
+  await w.write(Uint8Array.from(bytes));
+  w.releaseLock();
+}
+
+async function info() {
+  await send(0x00);
+  const r = await readN(8);
+  if (r[0] !== 0 || r[1] !== 0x57 || r[2] !== 0x4B || r[3] !== 0x32)
+    throw new Error("bad INFO reply: " + [...r].map(x => x.toString(16)).join(" "));
+  return { fw: r[4], region: r[5] | r[6] << 8, count: r[7] };
+}
+
+async function readBlob() {
+  await send(0x01);
+  const h = await readN(3);
+  if (h[0] !== 0) throw new Error("READ failed, status " + h[0]);
+  const n = h[1] | h[2] << 8;
+  return readN(n, 10000);
+}
+
+async function writeBlob(blob) {
+  await send(0x02, blob.length & 0xFF, blob.length >> 8);
+  const w = port.writable.getWriter();
+  await w.write(blob);
+  w.releaseLock();
+  const r = await readN(1, 20000);
+  if (r[0] !== 0)
+    throw new Error("WRITE failed, status " + r[0] +
+      ({1: " (bad length)", 2: " (CRC/validation)", 4: " (flash error)"}[r[0]] || ""));
+}
+
+async function connect(any) {
+  if (port) { await disconnect(); return; }
+  try {
+    port = await navigator.serial.requestPort(
+      any ? {} : { filters: [{ usbVendorId: VID, usbProductId: PID }] });
+  } catch (e) { return; }                 /* user cancelled picker */
+  await port.open({ baudRate: 115200 });
+  reader = port.readable.getReader();
+  rxBuf = []; rxLen = 0; rxWaiters = [];
+  pump();
+  setStatus(true, "connected");
+  try {
+    const i = await info();
+    log(`INFO: fw v${i.fw}, region ${i.region} B, ${i.count} pattern(s)`);
+    $("needprog").style.display = "none";
+    await doRead();
+  } catch (e) {
+    log("INFO failed: " + e.message);
+    $("needprog").style.display = "block";
+  }
+}
+
+async function disconnect() {
+  try { if (reader) { await reader.cancel(); reader.releaseLock(); } } catch (e) {}
+  try { await port.close(); } catch (e) {}
+  reader = null; port = null;
+  setStatus(false, "disconnected");
+}
+
+async function doRead() {
+  const blob = await readBlob();
+  patterns = parseBlob(blob);
+  render();
+  log(`READ ok: ${blob.length} B, ${patterns.length} pattern(s)`);
+}
+
+async function doWrite() {
+  if (!patterns.length) return log("nothing to write");
+  const blob = buildBlob(patterns);
+  if (blob.length > REGION) return log(`blob too big: ${blob.length}/${REGION} B`);
+  await writeBlob(blob);
+  log(`wrote ${blob.length} B`);
+  await doRead();          /* verify by reading back */
+  const back = buildBlob(patterns);
+  log("verified against device");
+}
+
+/* ---- UI ---- */
+function render() {
+  const host = $("patterns");
+  host.innerHTML = "";
+  patterns.forEach((cols, pi) => {
+    const card = document.createElement("div");
+    card.className = "pattern";
+    const h = document.createElement("h2");
+    h.innerHTML = `<span>pattern ${pi + 1} · ${cols.length} cols</span>`;
+    const del = document.createElement("button");
+    del.textContent = "delete";
+    del.className = "danger";
+    del.disabled = patterns.length <= 1;
+    del.onclick = () => { patterns.splice(pi, 1); render(); };
+    h.appendChild(del);
+    card.appendChild(h);
+
+    /* grid: [insert][col][insert][col]…[insert] — 2n+1 tracks */
+    const g = document.createElement("div");
+    g.className = "grid";
+    g.style.gridTemplateColumns = `repeat(${cols.length * 2 + 1}, 22px)`;
+
+    const ins = ci => {
+      const b = document.createElement("button");
+      b.className = "ctl"; b.textContent = "+"; b.title = "insert column";
+      b.disabled = cols.length >= MAX_COLS;
+      b.onclick = () => { cols.splice(ci, 0, 0); render(); };
+      return b;
+    };
+    const delC = ci => {
+      const b = document.createElement("button");
+      b.className = "ctl"; b.textContent = "×"; b.title = "delete column";
+      b.disabled = cols.length <= MIN_COLS;
+      b.onclick = () => { cols.splice(ci, 1); render(); };
+      return b;
+    };
+
+    g.appendChild(ins(0));
+    cols.forEach((c, ci) => { g.appendChild(delC(ci)); g.appendChild(ins(ci + 1)); });
+    for (let row = 0; row < 8; row++) {
+      g.appendChild(Object.assign(document.createElement("div"),
+                                  { className: "gap" }));
+      cols.forEach((c, ci) => {
+        const led = document.createElement("button");
+        led.className = "led" + (c & (1 << row) ? " on" : "");
+        led.title = `LED${row + 1} col ${ci + 1}`;
+        led.onclick = () => { cols[ci] ^= 1 << row; led.classList.toggle("on"); };
+        g.appendChild(led);
+        g.appendChild(Object.assign(document.createElement("div"),
+                                    { className: "gap" }));
+      });
+    }
+    card.appendChild(g);
+    host.appendChild(card);
+  });
+}
+
+function download(name, blob) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ---- wiring ---- */
+$("connect").onclick = () => connect(false);
+$("connectAny").onclick = () => connect(true);
+$("read").onclick = () => doRead().catch(e => log("read: " + e.message));
+$("write").onclick = () => doWrite().catch(e => log("write: " + e.message));
+$("exitProg").onclick = async () => {
+  try { await send(0x03); await readN(1); log("device exited prog mode"); }
+  catch (e) { log("exit: " + e.message); }
+  disconnect();
+};
+$("addPat").onclick = () => {
+  if (patterns.length >= MAX_PATTERNS) return log("max 255 patterns");
+  patterns.push(Array(MIN_COLS).fill(0));
+  render();
+};
+$("exportJson").onclick = () => {
+  const j = {
+    device: "winkdings2", version: 2,
+    patterns: patterns.map(p => p.map(c => "0x" + c.toString(16).padStart(2, "0")))
+  };
+  download("winkdings-patterns.json",
+           new Blob([JSON.stringify(j, null, 1)], { type: "application/json" }));
+};
+$("exportBin").onclick = () => {
+  if (!patterns.length) return;
+  download("winkdings-patterns.bin",
+           new Blob([buildBlob(patterns)], { type: "application/octet-stream" }));
+};
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = "";
+  if (!f) return;
+  try {
+    if (f.name.endsWith(".bin")) {
+      patterns = parseBlob(new Uint8Array(await f.arrayBuffer()));
+    } else {
+      const j = JSON.parse(await f.text());
+      const pats = Array.isArray(j) ? j : j.patterns;
+      patterns = pats.map(p => p.map(v =>
+        typeof v === "string" ? parseInt(v, 16) : v));
+      /* validate */
+      buildBlob(patterns);
+      if (patterns.some(p => !p.length || p.length > MAX_COLS ||
+                            p.some(c => c < 0 || c > 255)))
+        throw new Error("invalid pattern data");
+    }
+    render();
+    log(`imported ${patterns.length} pattern(s) from ${f.name}`);
+  } catch (e) { log(`import ${f.name}: ${e.message}`); }
+};
+
+if (!("serial" in navigator)) {
+  $("help").style.display = "block";
+  $("connect").disabled = $("connectAny").disabled = true;
+}
+render();
+</script>
+</body>
+</html>
