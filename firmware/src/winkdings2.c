@@ -141,30 +141,33 @@ static int poll_button(void)
     return EV_NONE;
 }
 
-/* Single lit LED bouncing 0..7. Runs for at least `ticks`
- * column-steps, then exits at the end of a full 0->7->0 sweep.
- * A button press aborts early. */
+/* Single lit LED bouncing 0..7, PB5 blinking in step. Runs for at
+ * least `ticks` column-steps, then exits at the end of a full
+ * 0->7->0 sweep.  The button is ignored — PA0 floats when no
+ * external pulldown is fitted and would abort the sweep early. */
 static void larson(uint32_t ticks, uint32_t cdly)
 {
     int8_t pos = 0, dir = 1;
     uint32_t t = 0, last = 0;
+    uint8_t pb5 = 0;
 
     show_column(1);                 /* LED1 on immediately */
     for (;;) {
         delay_cycles(cdly);
         t++;
-        if (GPIOA_INDR & 1u)
-            return;                 /* debug: button exits sweep */
         if (t - last >= LARSON_TICKS) {
             last = t;
+            pb5 ^= 1;
+            GPIOB_BSHR = pb5 ? (1u << 5) : (1u << (5 + 16));
             pos += dir;
             if (pos >= 7) { pos = 7; dir = -1; }
             if (pos <= 0) { pos = 0; dir = 1; }
             show_column((uint8_t)(1u << pos));
             if (t >= ticks && pos == 0 && dir == 1)
-                return;             /* full sweep done */
+                break;              /* full sweep done */
         }
     }
+    GPIOB_BSHR = 1u << (5 + 16);    /* PB5 off */
 }
 
 static void enter_standby(void)
@@ -283,12 +286,13 @@ static int display_pattern(uint8_t idx)
 int main(void)
 {
     /* Still on 8 MHz HSI out of reset. GPIOA (PA3..PA7) + GPIOB
-     * (PB0/PB1/PB3) LED outputs, push-pull 50 MHz; PA0 input float. */
+     * (PB0/PB1/PB3 + PB5 blink) LED outputs, push-pull 50 MHz;
+     * PA0 input float. */
     RCC_APB2PCENR |= RCC_AFIOEN | RCC_IOPAEN | RCC_IOPBEN;
     AFIO_PCFR1 = (AFIO_PCFR1 & ~AFIO_SWJ_CFG) | AFIO_SWJ_JTAGDIS;
     GPIOA_CFGLR = (GPIOA_CFGLR & ~(0xFFFFF000u | 0xFu))
                 | 0x33333000u | 0x4u;
-    GPIOB_CFGLR = (GPIOB_CFGLR & ~0x0000F0FFu) | 0x00003033u;
+    GPIOB_CFGLR = (GPIOB_CFGLR & ~0x00F0F0FFu) | 0x00303033u;
 
     /* Startup sweep: ~5 s (2000 ticks @ ~400 Hz), ends on a full
      * 0->7->0 pass; a button press skips it. */
