@@ -37,7 +37,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           # Upload webtool dir
-          path: 'wentool'
+          path: 'webtool'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
