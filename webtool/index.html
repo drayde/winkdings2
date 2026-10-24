@@ -22,6 +22,20 @@
   button.primary { background: #14375a; border-color: #2b6cb0; }
   button.primary:hover:not(:disabled) { background: #1b4a7a; }
   button.danger:hover:not(:disabled) { background: #5a1414; border-color: #a33; }
+  button.big { font-size: 15px; padding: 10px 20px; }
+  #langwrap { position: fixed; top: 12px; right: 16px; z-index: 10; }
+  #langmenu {
+    display: none; position: absolute; right: 0; top: calc(100% + 4px);
+    background: #1a1a1a; border: 1px solid #444; border-radius: 6px;
+    overflow: hidden; min-width: 130px;
+  }
+  #langmenu.open { display: block; }
+  #langmenu button {
+    display: block; width: 100%; border: 0; border-radius: 0;
+    text-align: left; padding: 8px 14px; background: transparent;
+  }
+  #langmenu button:hover { background: #333; }
+  #langmenu button.sel { color: #7fb2f0; }
   #bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 16px 0; }
   #bar .sep { width: 1px; height: 24px; background: #333; margin: 0 4px; }
   #status { padding: 4px 10px; border-radius: 10px; background: #222; font-size: 12px; }
@@ -32,6 +46,26 @@
     padding: 12px 16px; margin: 12px 0; display: none; max-width: 720px;
   }
   #help code, #needprog code { color: #fd6; }
+  #ffwarn { color: #fa8; font-weight: 600; }
+
+  /* expert-only elements */
+  .expert { display: none; }
+  body.expert .expert { display: revert; }
+
+  /* preview row: all patterns, small, read-only */
+  #previews { margin-top: 8px; }
+  .mini {
+    display: inline-block; vertical-align: top; margin: 0 10px 14px 0;
+    padding: 8px; border: 1px solid #2a2a2a; border-radius: 8px;
+    background: #0a0a0a; cursor: pointer;
+  }
+  .mini.sel { border-color: #2b6cb0; box-shadow: 0 0 0 1px #2b6cb0; }
+  .mini .lbl { font-size: 10px; color: #777; margin-bottom: 5px; }
+  .mgrid { display: grid; gap: 1px; }
+  .mc { width: 8px; height: 8px; border-radius: 50%; background: #2a2a2a; }
+  .mc.on { background: #ff2a2a; }
+
+  /* editor: selected pattern, full size */
   .pattern {
     display: inline-block; vertical-align: top; margin: 0 16px 24px 0;
     border: 1px solid #2a2a2a; border-radius: 10px; padding: 12px;
@@ -39,61 +73,81 @@
   }
   .pattern h2 { font-size: 13px; margin: 0 0 8px; color: #aaa; font-weight: 600;
                 display: flex; justify-content: space-between; gap: 12px; }
-  .pattern h2 button { padding: 1px 7px; font-size: 11px; }
-  .grid { display: grid; gap: 4px; }
-  .ctl { display: flex; align-items: center; justify-content: center;
-         width: 22px; height: 16px; border-radius: 4px; border: 0;
-         background: transparent; color: #666; font-size: 13px;
-         padding: 0; cursor: pointer; }
-  .ctl:hover:not(:disabled) { background: #222; color: #eee; }
+  .pattern h2 button {
+    padding: 1px 9px; font-size: 15px; color: #fff;
+  }
+  .grid { display: grid; gap: 4px 1px; }
+  .ctl {
+    display: flex; align-items: center; justify-content: center;
+    height: 26px; border-radius: 4px; border: 0;
+    background: transparent; color: #fff; font-size: 19px; font-weight: 600;
+    padding: 0; cursor: pointer;
+  }
   .ctl:disabled { visibility: hidden; }
-  .led { width: 22px; height: 22px; border-radius: 50%; border: 0;
+  .led { width: 32px; height: 32px; border-radius: 50%; border: 0;
          background: #333; cursor: pointer; padding: 0; }
   .led.on { background: #ff2a2a; box-shadow: 0 0 8px #ff2a2a88; }
-  .gap { width: 22px; height: 22px; }
+  .led:hover:not(:disabled) { background: #333; }
+  .led.on:hover:not(:disabled) { background: #ff2a2a; }
+  /* row of "+" insert buttons, centered on each column boundary */
+  .insrow { position: relative; height: 26px; margin-top: 6px; }
+  .ins {
+    position: absolute; top: 0; width: 24px; height: 24px;
+    padding: 0; border: 0; border-radius: 5px;
+    background: transparent; color: #bbb; font-size: 17px;
+  }
   #log {
     font: 12px/1.5 ui-monospace, monospace; color: #8f8; white-space: pre-wrap;
     max-width: 720px; margin-top: 8px; max-height: 160px; overflow: auto;
   }
-  #patterns { margin-top: 8px; }
   .hint { color: #777; font-size: 12px; margin-top: 4px; }
 </style>
 </head>
 <body>
-<h1>winkdings2 <small>pattern editor</small></h1>
-<div class="hint">Hold the button ~2 s on the device until the Larson scanner runs, then connect.</div>
+<div id="langwrap">
+  <button id="lang">Sprache 🇩🇪</button>
+  <div id="langmenu">
+    <button data-lang="de">🇩🇪 Deutsch</button>
+    <button data-lang="en">🇬🇧 English</button>
+  </div>
+</div>
+<h1>winkdings2 <small data-i18n="subtitle">pattern editor</small></h1>
+<div class="hint" data-i18n="hint">Hold the button ~2 s on the device until the Larson scanner runs, then connect.</div>
 
 <div id="help">
-  <b>Web Serial is not available in this browser.</b><br>
-  Use a Chromium-based browser on a desktop OS:
+  <div id="ffwarn" style="display:none" data-i18n="ffwarn">Firefox is not supported.</div>
+  <b data-i18n="helpTitle">Web Serial is not available in this browser.</b><br>
+  <span data-i18n="helpBody">Use a Chromium-based browser on a desktop OS:
   <code>Chrome ≥ 89</code>, <code>Edge ≥ 89</code>, <code>Opera ≥ 75</code>,
   or ChromeOS.<br>
   Firefox and Safari do not support Web Serial.<br>
   The page must be served from a secure context: <code>https://</code>,
-  <code>http://localhost</code>, or opened as a local <code>file://</code>.
+  <code>http://localhost</code>, or opened as a local <code>file://</code>.</span>
 </div>
-<div id="needprog"><b>Connected port is not answering the winkdings protocol.</b><br>
-  Make sure the device is in <b>programming mode</b>: hold the button for
+<div id="needprog"><b data-i18n="npTitle">Connected port is not answering the winkdings protocol.</b><br>
+  <span data-i18n="npBody">Make sure the device is in <b>programming mode</b>: hold the button for
   ~2 s until the Larson scanner (single light sweeping back and forth) is
-  running, then reconnect.</div>
+  running, then reconnect.</span></div>
 
 <div id="bar">
   <button id="connect" class="primary">Connect</button>
-  <button id="connectAny">Connect (any port)</button>
+  <button id="connectAny" class="expert">Connect (any port)</button>
   <span id="status" class="off">disconnected</span>
   <span class="sep"></span>
   <button id="read" disabled>Read</button>
   <button id="write" disabled>Write to device</button>
-  <button id="exitProg" disabled title="leave programming mode">Exit prog mode</button>
+  <button id="exitProg" class="expert" disabled title="leave programming mode">Exit prog mode</button>
+  <button id="undo" disabled>Undo</button>
   <span class="sep"></span>
-  <button id="addPat">+ pattern</button>
   <button id="exportJson">Export JSON</button>
-  <button id="exportBin">Export .bin</button>
+  <button id="exportBin" class="expert">Export .bin</button>
   <button id="importBtn">Import</button>
   <input id="importFile" type="file" accept=".json,.bin" hidden>
 </div>
 
+<div id="previews"></div>
 <div id="patterns"></div>
+<button id="addPat" class="big" style="display:none">+ pattern</button>
 <div id="log"></div>
 
 <script>
@@ -110,13 +164,175 @@ const MIN_COLS = 3, MAX_COLS = 255, MAX_PATTERNS = 255, REGION = 4096;
 
 const $ = id => document.getElementById(id);
 const logEl = $("log");
+const addPatBtn = $("addPat");   /* survives innerHTML clears via re-append */
 function log(msg) {
   logEl.textContent += msg + "\n";
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-/* ---- model ---- */
+/* ---- i18n ---- */
+const STR = {
+  en: {
+    subtitle: "pattern editor",
+    hint: "Hold the button ~2 s on the device until the Larson scanner runs, then connect.",
+    ffwarn: "Firefox is not supported.",
+    helpTitle: "Web Serial is not available in this browser.",
+    helpBody: `Use a Chromium-based browser on a desktop OS:
+      <code>Chrome ≥ 89</code>, <code>Edge ≥ 89</code>, <code>Opera ≥ 75</code>,
+      or ChromeOS.<br>
+      Firefox and Safari do not support Web Serial.<br>
+      The page must be served from a secure context: <code>https://</code>,
+      <code>http://localhost</code>, or opened as a local <code>file://</code>.`,
+    npTitle: "Connected port is not answering the winkdings protocol.",
+    npBody: `Make sure the device is in <b>programming mode</b>: hold the button for
+      ~2 s until the Larson scanner (single light sweeping back and forth) is
+      running, then reconnect.`,
+    spr: "Language",
+    connect: "Connect", disconnect: "Disconnect",
+    connectAny: "Connect (any port)",
+    stOn: "connected", stOff: "disconnected",
+    read: "⬆ Read from Winkdings", write: "⬇ Write to Winkdings",
+    exitProg: "Exit prog mode", exitTitle: "leave programming mode",
+    undo: "↺ Undo",
+    exportJson: "Export", exportBin: "Export .bin",
+    import: "Import", addPat: "+ pattern",
+    pattern: "pattern", cols: "cols",
+    delPat: "delete pattern", dupPat: "duplicate pattern",
+    delCol: "delete column", insCol: "insert column",
+    portClosed: "port closed",
+    infoOk: i => `INFO: fw v${i.fw}, region ${i.region} B, ${i.count} pattern(s)`,
+    infoFail: e => "INFO failed: " + e.message,
+    readOk: (n, c) => `READ ok: ${n} B, ${c} pattern(s)`,
+    nothingToWrite: "nothing to write",
+    tooBig: (n, r) => `blob too big: ${n}/${r} B`,
+    wrote: n => `wrote ${n} B`,
+    verified: "verified against device",
+    exitOk: "device exited prog mode",
+    maxPats: "max 255 patterns",
+    imported: (n, f) => `imported ${n} pattern(s) from ${f}`,
+    importErr: (f, m) => `import ${f}: ${m}`,
+    expertOn: "expert mode on (Ctrl+Shift+P to leave)",
+    expertOff: "expert mode off",
+  },
+  de: {
+    subtitle: "Muster-Editor",
+    hint: "Taster 2 Sekunden drücken zum Wechsel in Programmiermodus",
+    ffwarn: "Firefox wird nicht unterstützt.",
+    helpTitle: "Web Serial ist in diesem Browser nicht verfügbar.",
+    helpBody: `Bitte einen Chromium-basierten Browser auf einem Desktop-System
+      verwenden: <code>Chrome ≥ 89</code>, <code>Edge ≥ 89</code>,
+      <code>Opera ≥ 75</code> oder ChromeOS.<br>
+      Firefox und Safari unterstützen Web Serial nicht.<br>
+      Die Seite muss aus einem sicheren Kontext geladen werden:
+      <code>https://</code>, <code>http://localhost</code> oder als lokale
+      <code>file://</code>-Datei.`,
+    npTitle: "Der verbundene Port antwortet nicht auf das winkdings-Protokoll.",
+    npBody: `Stelle sicher, dass sich das Gerät im <b>Programmiermodus</b>
+      befindet: Taster ~2 s gedrückt halten, bis der Larson-Scanner (ein Licht,
+      das hin- und herwandert) läuft, dann neu verbinden.`,
+    spr: "Sprache",
+    connect: "Verbinden", disconnect: "Trennen",
+    connectAny: "Verbinden (beliebiger Port)",
+    stOn: "verbunden", stOff: "getrennt",
+    read: "⬆ Von Winkdings lesen", write: "⬇ Auf Winkdings schreiben",
+    exitProg: "Prog-Modus beenden", exitTitle: "Programmiermodus verlassen",
+    undo: "↺ Rückgängig",
+    exportJson: "Exportieren", exportBin: ".bin exportieren",
+    import: "Importieren", addPat: "+ Muster",
+    pattern: "Muster", cols: "Spalten",
+    delPat: "Muster löschen", dupPat: "Muster duplizieren",
+    delCol: "Spalte löschen", insCol: "Spalte einfügen",
+    portClosed: "Port geschlossen",
+    infoOk: i => `INFO: fw v${i.fw}, Region ${i.region} B, ${i.count} Muster`,
+    infoFail: e => "INFO fehlgeschlagen: " + e.message,
+    readOk: (n, c) => `READ ok: ${n} B, ${c} Muster`,
+    nothingToWrite: "nichts zu schreiben",
+    tooBig: (n, r) => `Blob zu groß: ${n}/${r} B`,
+    wrote: n => `${n} B geschrieben`,
+    verified: "gegen Gerät verifiziert",
+    exitOk: "Gerät hat Programmiermodus verlassen",
+    maxPats: "max. 255 Muster",
+    imported: (n, f) => `${n} Muster aus ${f} importiert`,
+    importErr: (f, m) => `Import ${f}: ${m}`,
+    expertOn: "Expert-Modus an (Ctrl+Shift+P zum Verlassen)",
+    expertOff: "Expert-Modus aus",
+  },
+};
+let lang = "de";
+const t = k => STR[lang][k];
+const FLAG = { de: "🇩🇪", en: "🇬🇧" };
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  for (const el of document.querySelectorAll("[data-i18n]"))
+    el.innerHTML = t(el.dataset.i18n);
+  $("connect").textContent = port ? t("disconnect") : t("connect");
+  $("connectAny").textContent = t("connectAny");
+  $("status").textContent = port ? t("stOn") : t("stOff");
+  $("read").textContent = t("read");
+  $("write").textContent = t("write");
+  $("exitProg").textContent = t("exitProg");
+  $("exitProg").title = t("exitTitle");
+  $("undo").textContent = t("undo");
+  $("exportJson").textContent = t("exportJson");
+  $("exportBin").textContent = t("exportBin");
+  $("importBtn").textContent = t("import");
+  $("addPat").textContent = t("addPat");
+  $("lang").textContent = t("spr") + " " + FLAG[lang];
+  for (const b of $("langmenu").querySelectorAll("button"))
+    b.classList.toggle("sel", b.dataset.lang === lang);
+  render();
+}
+const langmenu = $("langmenu");
+$("lang").onclick = e => {
+  e.stopPropagation();
+  langmenu.classList.toggle("open");
+};
+for (const b of langmenu.querySelectorAll("button"))
+  b.onclick = () => {
+    lang = b.dataset.lang;
+    langmenu.classList.remove("open");
+    applyLang();
+  };
+document.addEventListener("click", e => {
+  if (!e.target.closest("#langwrap")) langmenu.classList.remove("open");
+});
+
+/* ---- expert mode (Ctrl+Shift+P) ---- */
+let expert = false;
+console.info("Expert mode: press Ctrl+Shift+P · Expertenmodus: Strg+Umschalt+P drücken");
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey && e.shiftKey && e.code === "KeyP") {
+    e.preventDefault();
+    expert = !expert;
+    document.body.classList.toggle("expert", expert);
+    console.info("expert mode: " + (expert ? "on" : "off"));
+    log(t(expert ? "expertOn" : "expertOff"));
+  } else if (e.ctrlKey && !e.shiftKey && e.code === "KeyZ") {
+    e.preventDefault();
+    doUndo();
+  }
+});
+function logExpert(msg) { if (expert) log(msg); }
+
+/* ---- model + undo ---- */
 let patterns = [];   // patterns[i] = array of column bytes (bit i = LED i+1)
+let sel = 0;         // index of pattern shown in the editor
+const history = [];
+
+function pushHist() {
+  history.push(JSON.stringify(patterns));
+  if (history.length > 200) history.shift();
+  $("undo").disabled = false;
+}
+function doUndo() {
+  if (!history.length) return;
+  patterns = JSON.parse(history.pop());
+  sel = Math.min(sel, patterns.length - 1);
+  if (sel < 0) sel = 0;
+  $("undo").disabled = !history.length;
+  render();
+}
 
 function crc16(data) {
   let crc = 0xFFFF;
@@ -162,12 +378,12 @@ function parseBlob(buf) {
 /* ---- serial ---- */
 let port = null, reader = null, rxBuf = [], rxWaiters = [], rxLen = 0;
 
-function setStatus(on, text) {
+function setStatus(on) {
   $("status").className = on ? "on" : "off";
-  $("status").textContent = text;
+  $("status").textContent = t(on ? "stOn" : "stOff");
   for (const id of ["read", "write", "exitProg"])
     $(id).disabled = !on;
-  $("connect").textContent = on ? "Disconnect" : "Connect";
+  $("connect").textContent = t(on ? "disconnect" : "connect");
 }
 
 async function pump() {
@@ -181,8 +397,8 @@ async function pump() {
       }
     }
   } catch (e) { /* device went away */ }
-  setStatus(false, "disconnected");
-  log("port closed");
+  setStatus(false);
+  log(t("portClosed"));
 }
 
 function readN(n, timeout = 5000) {
@@ -244,14 +460,23 @@ async function connect(any) {
   reader = port.readable.getReader();
   rxBuf = []; rxLen = 0; rxWaiters = [];
   pump();
-  setStatus(true, "connected");
+  setStatus(true);
   try {
-    const i = await info();
-    log(`INFO: fw v${i.fw}, region ${i.region} B, ${i.count} pattern(s)`);
+    let i;
+    try {
+      i = await info();
+    } catch (e) {
+      /* device may have reset when the port opened, or the first reply
+         was shifted by stale bytes — flush and retry once */
+      await new Promise(r => setTimeout(r, 600));
+      rxBuf = []; rxLen = 0;
+      i = await info();
+    }
+    logExpert(t("infoOk")(i));
     $("needprog").style.display = "none";
     await doRead();
   } catch (e) {
-    log("INFO failed: " + e.message);
+    log(t("infoFail")(e));
     $("needprog").style.display = "block";
   }
 }
@@ -260,82 +485,142 @@ async function disconnect() {
   try { if (reader) { await reader.cancel(); reader.releaseLock(); } } catch (e) {}
   try { await port.close(); } catch (e) {}
   reader = null; port = null;
-  setStatus(false, "disconnected");
+  setStatus(false);
 }
 
 async function doRead() {
   const blob = await readBlob();
   patterns = parseBlob(blob);
+  sel = 0;
   render();
-  log(`READ ok: ${blob.length} B, ${patterns.length} pattern(s)`);
+  logExpert(t("readOk")(blob.length, patterns.length));
 }
 
 async function doWrite() {
-  if (!patterns.length) return log("nothing to write");
+  if (!patterns.length) return log(t("nothingToWrite"));
   const blob = buildBlob(patterns);
-  if (blob.length > REGION) return log(`blob too big: ${blob.length}/${REGION} B`);
+  if (blob.length > REGION) return log(t("tooBig")(blob.length, REGION));
   await writeBlob(blob);
-  log(`wrote ${blob.length} B`);
+  log(t("wrote")(blob.length));
   await doRead();          /* verify by reading back */
-  const back = buildBlob(patterns);
-  log("verified against device");
+  log(t("verified"));
 }
 
 /* ---- UI ---- */
 function render() {
+  /* stage 1: all patterns as small read-only previews */
+  const pv = $("previews");
+  pv.innerHTML = "";
+  patterns.forEach((cols, pi) => {
+    const m = document.createElement("div");
+    m.className = "mini" + (pi === sel ? " sel" : "");
+    const lbl = document.createElement("div");
+    lbl.className = "lbl";
+    lbl.textContent = `${t("pattern")} ${pi + 1}`;
+    m.appendChild(lbl);
+    const g = document.createElement("div");
+    g.className = "mgrid";
+    g.style.gridTemplateColumns = `repeat(${cols.length}, 8px)`;
+    for (let row = 0; row < 8; row++)
+      for (const c of cols) {
+        const cell = document.createElement("div");
+        cell.className = "mc" + (c & (1 << row) ? " on" : "");
+        g.appendChild(cell);
+      }
+    m.appendChild(g);
+    m.title = `${t("pattern")} ${pi + 1} · ${cols.length} ${t("cols")}`;
+    m.onclick = () => { sel = pi; render(); };
+    pv.appendChild(m);
+  });
+
+  /* "+ pattern" sits right after the last preview */
+  addPatBtn.style.display = "inline-block";
+  addPatBtn.style.verticalAlign = "top";
+  pv.appendChild(addPatBtn);
+
+  /* stage 2: selected pattern, editable */
   const host = $("patterns");
   host.innerHTML = "";
-  patterns.forEach((cols, pi) => {
-    const card = document.createElement("div");
-    card.className = "pattern";
-    const h = document.createElement("h2");
-    h.innerHTML = `<span>pattern ${pi + 1} · ${cols.length} cols</span>`;
-    const del = document.createElement("button");
-    del.textContent = "delete";
-    del.className = "danger";
-    del.disabled = patterns.length <= 1;
-    del.onclick = () => { patterns.splice(pi, 1); render(); };
-    h.appendChild(del);
-    card.appendChild(h);
+  const cols = patterns[sel];
+  if (!cols) return;
 
-    /* grid: [insert][col][insert][col]…[insert] — 2n+1 tracks */
-    const g = document.createElement("div");
-    g.className = "grid";
-    g.style.gridTemplateColumns = `repeat(${cols.length * 2 + 1}, 22px)`;
+  const card = document.createElement("div");
+  card.className = "pattern";
+  const h = document.createElement("h2");
+  const span = document.createElement("span");
+  span.textContent = `${t("pattern")} ${sel + 1} · ${cols.length} ${t("cols")}`;
+  h.appendChild(span);
+  const acts = document.createElement("span");
+  acts.style.display = "flex";
+  acts.style.gap = "6px";
+  const dup = document.createElement("button");
+  dup.textContent = "⧉";
+  dup.title = t("dupPat");
+  dup.disabled = patterns.length >= MAX_PATTERNS;
+  dup.onclick = () => {
+    pushHist();
+    patterns.splice(sel + 1, 0, [...cols]);
+    sel++;
+    render();
+  };
+  acts.appendChild(dup);
+  const del = document.createElement("button");
+  del.textContent = "🗑";
+  del.className = "danger";
+  del.title = t("delPat");
+  del.disabled = patterns.length <= 1;
+  del.onclick = () => {
+    pushHist();
+    patterns.splice(sel, 1);
+    sel = Math.min(sel, patterns.length - 1);
+    render();
+  };
+  acts.appendChild(del);
+  h.appendChild(acts);
+  card.appendChild(h);
 
-    const ins = ci => {
-      const b = document.createElement("button");
-      b.className = "ctl"; b.textContent = "+"; b.title = "insert column";
-      b.disabled = cols.length >= MAX_COLS;
-      b.onclick = () => { cols.splice(ci, 0, 0); render(); };
-      return b;
-    };
-    const delC = ci => {
-      const b = document.createElement("button");
-      b.className = "ctl"; b.textContent = "×"; b.title = "delete column";
-      b.disabled = cols.length <= MIN_COLS;
-      b.onclick = () => { cols.splice(ci, 1); render(); };
-      return b;
-    };
+  /* grid: one track per column — × row on top, LEDs below */
+  const g = document.createElement("div");
+  g.className = "grid";
+  g.style.gridTemplateColumns = `repeat(${cols.length}, 32px)`;
 
-    g.appendChild(ins(0));
-    cols.forEach((c, ci) => { g.appendChild(delC(ci)); g.appendChild(ins(ci + 1)); });
-    for (let row = 0; row < 8; row++) {
-      g.appendChild(Object.assign(document.createElement("div"),
-                                  { className: "gap" }));
-      cols.forEach((c, ci) => {
-        const led = document.createElement("button");
-        led.className = "led" + (c & (1 << row) ? " on" : "");
-        led.title = `LED${row + 1} col ${ci + 1}`;
-        led.onclick = () => { cols[ci] ^= 1 << row; led.classList.toggle("on"); };
-        g.appendChild(led);
-        g.appendChild(Object.assign(document.createElement("div"),
-                                    { className: "gap" }));
-      });
-    }
-    card.appendChild(g);
-    host.appendChild(card);
+  cols.forEach((c, ci) => {
+    const b = document.createElement("button");
+    b.className = "ctl"; b.textContent = "×"; b.title = t("delCol");
+    b.disabled = cols.length <= MIN_COLS;
+    b.onclick = () => { pushHist(); cols.splice(ci, 1); render(); };
+    g.appendChild(b);
   });
+  for (let row = 0; row < 8; row++)
+    cols.forEach((c, ci) => {
+      const led = document.createElement("button");
+      led.className = "led" + (c & (1 << row) ? " on" : "");
+      led.title = `LED${row + 1} col ${ci + 1}`;
+      led.onclick = () => {
+        pushHist();
+        cols[ci] ^= 1 << row;
+        led.classList.toggle("on");
+        render();           /* keep preview in sync */
+      };
+      g.appendChild(led);
+    });
+  card.appendChild(g);
+
+  /* "+" insert buttons between every two columns, centered on the boundary */
+  const ins = document.createElement("div");
+  ins.className = "insrow";
+  for (let i = 0; i < cols.length - 1; i++) {
+    const b = document.createElement("button");
+    b.className = "ins";
+    b.textContent = "+";
+    b.title = t("insCol");
+    b.style.left = ((i + 1) * 33 - 12) + "px";
+    b.disabled = cols.length >= MAX_COLS;
+    b.onclick = () => { pushHist(); cols.splice(i + 1, 0, 0); render(); };
+    ins.appendChild(b);
+  }
+  card.appendChild(ins);
+  host.appendChild(card);
 }
 
 function download(name, blob) {
@@ -352,13 +637,16 @@ $("connectAny").onclick = () => connect(true);
 $("read").onclick = () => doRead().catch(e => log("read: " + e.message));
 $("write").onclick = () => doWrite().catch(e => log("write: " + e.message));
 $("exitProg").onclick = async () => {
-  try { await send(0x03); await readN(1); log("device exited prog mode"); }
+  try { await send(0x03); await readN(1); log(t("exitOk")); }
   catch (e) { log("exit: " + e.message); }
   disconnect();
 };
+$("undo").onclick = doUndo;
 $("addPat").onclick = () => {
-  if (patterns.length >= MAX_PATTERNS) return log("max 255 patterns");
+  if (patterns.length >= MAX_PATTERNS) return log(t("maxPats"));
+  pushHist();
   patterns.push(Array(MIN_COLS).fill(0));
+  sel = patterns.length - 1;
   render();
 };
 $("exportJson").onclick = () => {
@@ -379,29 +667,33 @@ $("importFile").onchange = async ev => {
   const f = ev.target.files[0]; ev.target.value = "";
   if (!f) return;
   try {
+    let pats;
     if (f.name.endsWith(".bin")) {
-      patterns = parseBlob(new Uint8Array(await f.arrayBuffer()));
+      pats = parseBlob(new Uint8Array(await f.arrayBuffer()));
     } else {
       const j = JSON.parse(await f.text());
-      const pats = Array.isArray(j) ? j : j.patterns;
-      patterns = pats.map(p => p.map(v =>
+      const pp = Array.isArray(j) ? j : j.patterns;
+      pats = pp.map(p => p.map(v =>
         typeof v === "string" ? parseInt(v, 16) : v));
-      /* validate */
-      buildBlob(patterns);
-      if (patterns.some(p => !p.length || p.length > MAX_COLS ||
-                            p.some(c => c < 0 || c > 255)))
+      buildBlob(pats);
+      if (pats.some(p => !p.length || p.length > MAX_COLS ||
+                        p.some(c => c < 0 || c > 255)))
         throw new Error("invalid pattern data");
     }
+    pushHist();
+    patterns = pats; sel = 0;
     render();
-    log(`imported ${patterns.length} pattern(s) from ${f.name}`);
-  } catch (e) { log(`import ${f.name}: ${e.message}`); }
+    log(t("imported")(patterns.length, f.name));
+  } catch (e) { log(t("importErr")(f.name, e.message)); }
 };
 
 if (!("serial" in navigator)) {
   $("help").style.display = "block";
+  if (/firefox/i.test(navigator.userAgent))
+    $("ffwarn").style.display = "block";
   $("connect").disabled = $("connectAny").disabled = true;
 }
-render();
+applyLang();
 </script>
 </body>
 </html>
